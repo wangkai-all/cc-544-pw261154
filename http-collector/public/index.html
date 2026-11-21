@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HTTP Vary 数据采集站</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>HTTP 数据采集站 <small>Vary 感知缓存 · ETag 条件请求 · 代次控制</small></h1>
+    <p class="note">
+      代次（epoch / 序号）只表达<strong>本地发起与确认的先后</strong>，不判断源站内容的业务新旧；
+      真实请求与响应始终保留在流水里。
+    </p>
+  </header>
+
+  <section class="card" id="demo-card">
+    <h2>一键演示场景</h2>
+    <div class="demo-buttons">
+      <button data-demo="first">1. 首次接收（两种语言各采一次）</button>
+      <button data-demo="revalidate">2. 条件校验（改源站正文 → ETag 变 → 200 取回新正文）</button>
+      <button data-demo="switch-lang">3. 切换语言（验证不同键、不串内容）</button>
+      <button data-demo="delete-body">4. 删除本地正文再取回（不返回空、不借用别的语言）</button>
+      <button data-demo="late">5. 旧请求晚返回（延迟首个请求，后发先确认，旧响应被拒）</button>
+      <button data-demo="rule-switch">6. 规则切换通知（Vary 集合变化，旧键立即失效）</button>
+      <button data-demo="silent-switch">7. 静默切换（无通知，靠新响应识别 Vary 变化）</button>
+      <button data-demo="vary-star">8. Vary: *（不进入可复用缓存）</button>
+    </div>
+    <pre id="demo-log" class="demo-log"></pre>
+  </section>
+
+  <section class="card">
+    <h2>① 构造采集请求</h2>
+    <div class="row">
+      <label>采集路径 <input id="url" value="/data" /></label>
+      <label class="inline"><input type="checkbox" id="force" /> 强制采集（跳过缓存读取，仍走代次闸门）</label>
+    </div>
+    <p class="hint">
+      头名称大小写不敏感。<strong>删除整行 = 该请求头缺失</strong>；保留行但值为空 = 头发送空值，两者在缓存键中用
+      <code>__ABSENT__</code> 与空串区分。
+    </p>
+    <table class="header-table">
+      <thead><tr><th>头名称</th><th>值</th><th></th></tr></thead>
+      <tbody id="header-rows"></tbody>
+    </table>
+    <div class="row">
+      <button id="add-header">+ 添加请求头</button>
+      <button id="send" class="primary">发起采集</button>
+      <span id="spinner" class="spinner hidden">采集中…</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>② 最新采集结果</h2>
+    <div id="result" class="result empty">尚未采集</div>
+  </section>
+
+  <section class="card">
+    <h2>③ 本地缓存表示（每份分别保存正文 / ETag / 来源请求头 / 有效期）</h2>
+    <p class="hint">
+      全局代次 <strong id="global-epoch">-</strong>。缓存键 = URL + Vary 指定头的取值，<strong>不是仅 URL</strong>。
+    </p>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>缓存键</th><th>代次</th><th>ETag</th><th>正文</th><th>有效期</th><th>来源请求头</th><th>操作</th>
+        </tr>
+      </thead>
+      <tbody id="entry-rows"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>④ 采集流水（缓存命中理由 + 真实上游请求/响应）</h2>
+    <table class="data-table">
+      <thead>
+        <tr><th>时间</th><th>模式</th><th>判定</th><th>上游</th><th>代次/序号</th><th>说明</th></tr>
+      </thead>
+      <tbody id="fetch-rows"></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>⑤ 源站控制</h2>
+    <div class="grid2">
+      <div>
+        <h3>规则集（Vary 字段集合）</h3>
+        <div id="rule-buttons"></div>
+        <label class="inline"><input type="checkbox" id="silent-switch" /> 静默切换（不通知采集端）</label>
+        <h3>编辑源站正文（ETag 版本 +1，不主动通知）</h3>
+        <div class="row">
+          <select id="edit-lang">
+            <option value="zh">zh</option>
+            <option value="en">en</option>
+          </select>
+          <select id="edit-type">
+            <option value="application/json">application/json</option>
+            <option value="text/plain">text/plain</option>
+          </select>
+          <select id="edit-rule">
+            <option value="A">规则A</option>
+            <option value="B">规则B</option>
+            <option value="C">规则C</option>
+          </select>
+        </div>
+        <textarea id="edit-content" rows="3"></textarea>
+        <button id="save-body">保存正文</button>
+        <h3>延迟下一个请求</h3>
+        <div class="row">
+          <select id="delay-lang">
+            <option value="">任意语言</option>
+            <option value="zh">zh</option>
+            <option value="en">en</option>
+          </select>
+          <select id="delay-type">
+            <option value="">任意媒体类型</option>
+            <option value="application/json">application/json</option>
+            <option value="text/plain">text/plain</option>
+          </select>
+          <input id="delay-ms" type="number" value="3000" style="width:6em" /> ms
+          <button id="add-delay">加延迟</button>
+          <button id="clear-delays">清除延迟</button>
+        </div>
+      </div>
+      <div>
+        <h3>源站真实入站请求记录</h3>
+        <table class="data-table compact">
+          <thead><tr><th>时间</th><th>规则</th><th>语言/类型</th><th>状态</th><th>If-None-Match</th><th>延迟</th></tr></thead>
+          <tbody id="origin-rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>⑥ 代次 / 失效事件</h2>
+    <table class="data-table compact">
+      <thead><tr><th>时间</th><th>类型</th><th>详情</th></tr></thead>
+      <tbody id="event-rows"></tbody>
+    </table>
+  </section>
+
+  <script src="/app.js"></script>
+</body>
+</html>

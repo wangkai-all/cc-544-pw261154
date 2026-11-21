@@ -1,0 +1,16 @@
+{
+  "name": "http-vary-collector",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "HTTP 数据采集站：Vary 感知缓存、ETag 条件请求、代次控制的可控源站演示",
+  "scripts": {
+    "start": "node src/start-all.js",
+    "origin": "node src/origin.js",
+    "collector": "node src/collector.js",
+    "test": "node test/smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
